@@ -21,7 +21,6 @@ Open <http://localhost:3000>. Enter the editor password to sign in (it's the `ED
 
 - **/library** — Browse, filter, edit, and add cards in the DynamoDB-backed library.
 - **/build** — Plan the next month: 6 ordered slots per day, pick from library or create new. Auto-saves to `localStorage`. Export downloads `<YYYY>_<M>.json`.
-- **/past** — Read-only view of historical monthly manifests. Loaded live from `https://static.gratefulness.me/gratitude-daily-zen/{year}/{MM}/en_exp_2.json` (month is zero-padded). The page probes every month from January 2021 forward in parallel and shows the ones that returned 200.
 
 ## Deploy
 
