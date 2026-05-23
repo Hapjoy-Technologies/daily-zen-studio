@@ -39,10 +39,14 @@ export type Stats = {
   byStatus: Record<string, number>;
 };
 
+/** Server-side sort key on /cards. lru = oldest-used first, mru = newest-used first. */
+export type SortKey = 'lru' | 'mru' | 'most' | 'alpha';
+
 export type ListCardsParams = {
   theme?: string;
   author?: string;
   status?: string;
+  sort?: SortKey;
   limit?: number;
   cursor?: string | null;
 };

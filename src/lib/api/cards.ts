@@ -12,6 +12,7 @@ export async function listCards(params: ListCardsParams = {}): Promise<CardsPage
       theme: params.theme,
       author: params.author,
       status: params.status,
+      sort: params.sort,
       limit: params.limit ?? 100,
       cursor: params.cursor ?? undefined,
     },

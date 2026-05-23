@@ -16,7 +16,8 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import { THEME_ORDER, THEME_LABELS, RETIRED_THEMES } from '@/lib/constants';
 import { useAuthors } from '@/lib/queries/meta';
 
-export type SortKey = 'lru' | 'mru' | 'most' | 'alpha';
+import type { SortKey } from '@/lib/api/types';
+
 export const SORT_LABEL: Record<SortKey, string> = {
   lru: 'Least recently used',
   mru: 'Most recently used',

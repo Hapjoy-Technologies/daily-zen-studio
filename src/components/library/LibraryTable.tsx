@@ -15,10 +15,10 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
-import type { LibraryCard } from '@/lib/api/types';
+import type { LibraryCard, SortKey } from '@/lib/api/types';
 import { useInfiniteCards, useSearchCards } from '@/lib/queries/cards';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
-import type { LibraryFilterState, SortKey } from './LibraryFilters';
+import type { LibraryFilterState } from './LibraryFilters';
 import { CardPreview } from '@/components/common/CardPreview';
 import { ThemeChip } from '@/components/common/ThemeChip';
 
@@ -61,11 +61,13 @@ export function LibraryTable({
   // Branch on whether the user is searching:
   //  - searching → hit /cards/search (server scans the full library) and filter
   //    theme/status/author client-side over the result set (already small).
-  //  - not searching → keep the GSI-backed paginated fetch unchanged.
+  //  - not searching → paginated GET /cards. Pass `sort` so the server orders
+  //    across the whole DB; we no longer client-side sort the loaded slice.
   const infinite = useInfiniteCards({
     theme: filters.theme ?? undefined,
     author: filters.author ?? undefined,
     status: filters.status || undefined,
+    sort: filters.sort,
   });
   const search = useSearchCards(searchActive ? debouncedSearch : '');
 
@@ -96,10 +98,15 @@ export function LibraryTable({
     }, [searchActive, search, infinite]);
 
   const visible = React.useMemo(() => {
-    // Re-apply theme/status/author client-side over search results so combo
-    // filters still narrow things down.
-    const filtered = searchActive ? applyClientFilters(items, filters) : items;
-    return sortCards(filtered, filters.sort);
+    if (searchActive) {
+      // Re-apply theme/status/author client-side over search results so combo
+      // filters still narrow things down, and sort client-side because
+      // /cards/search doesn't take a sort param yet.
+      return sortCards(applyClientFilters(items, filters), filters.sort);
+    }
+    // Non-search path: items come pre-sorted from the server (sort param on
+    // /cards). Pagination preserves the order across pages via offset cursors.
+    return items;
   }, [items, searchActive, filters]);
 
   return (
