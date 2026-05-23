@@ -12,7 +12,8 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import type { LibraryCard } from '@/lib/api/types';
-import { useCreateCard } from '@/lib/queries/cards';
+import { useCreateCard, useSearchCards } from '@/lib/queries/cards';
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { LibraryFilters, type LibraryFilterState } from '@/components/library/LibraryFilters';
 import { LibraryTable } from '@/components/library/LibraryTable';
 import { CardDrawer } from '@/components/library/CardDrawer';
@@ -34,6 +35,16 @@ export default function LibraryPage() {
   const [createError, setCreateError] = React.useState<string | null>(null);
   const createCard = useCreateCard();
 
+  // Drive the search-input spinner: true while the user has typed something
+  // we haven't fired yet, or while the in-flight /cards/search is fetching.
+  // Both this and the table use the same TanStack Query key so the network
+  // call is shared.
+  const debouncedSearch = useDebouncedValue(filters.search, 300);
+  const search = useSearchCards(debouncedSearch);
+  const typedAheadOfDebounce =
+    filters.search.trim() !== '' && filters.search !== debouncedSearch;
+  const isSearching = typedAheadOfDebounce || search.isFetching;
+
   return (
     <Stack spacing={3}>
       <Stack direction="row" alignItems="flex-end" justifyContent="space-between" gap={2}>
@@ -48,7 +59,7 @@ export default function LibraryPage() {
         </Button>
       </Stack>
 
-      <LibraryFilters state={filters} onChange={setFilters} />
+      <LibraryFilters state={filters} onChange={setFilters} isSearching={isSearching} />
 
       <LibraryTable filters={filters} onRowClick={setSelected} />
 

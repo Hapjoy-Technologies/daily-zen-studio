@@ -6,6 +6,7 @@ import {
 } from '@tanstack/react-query';
 import {
   listCards,
+  searchCards,
   getCard,
   createCard,
   updateCard,
@@ -16,6 +17,7 @@ import type { CardsPage, LibraryCard, ListCardsParams } from '@/lib/api/types';
 import { queryKeys } from './keys';
 
 const PAGE_LIMIT = 200;
+const SEARCH_LIMIT = 200;
 
 export function useInfiniteCards(params: Omit<ListCardsParams, 'cursor' | 'limit'>) {
   return useInfiniteQuery({
@@ -25,6 +27,21 @@ export function useInfiniteCards(params: Omit<ListCardsParams, 'cursor' | 'limit
       listCards({ ...params, limit: PAGE_LIMIT, cursor: pageParam }),
     getNextPageParam: (lastPage: CardsPage) => lastPage.cursor ?? undefined,
     staleTime: 60_000,
+  });
+}
+
+/**
+ * Full-library substring search. Server filters across all ~4,700 cards
+ * (cached in Lambda memory). Only fires when q is non-empty.
+ */
+export function useSearchCards(q: string) {
+  const trimmed = q.trim();
+  return useQuery({
+    queryKey: ['cards', 'search', trimmed],
+    queryFn: () => searchCards(trimmed, SEARCH_LIMIT),
+    enabled: trimmed.length > 0,
+    staleTime: 60_000,
+    placeholderData: (prev) => prev, // keep the previous result visible while typing
   });
 }
 

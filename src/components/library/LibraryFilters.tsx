@@ -4,12 +4,15 @@ import {
   Autocomplete,
   Box,
   Chip,
+  CircularProgress,
+  InputAdornment,
   MenuItem,
   Stack,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
 } from '@mui/material';
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import { THEME_ORDER, THEME_LABELS, RETIRED_THEMES } from '@/lib/constants';
 import { useAuthors } from '@/lib/queries/meta';
 
@@ -33,9 +36,12 @@ export type LibraryFilterState = {
 export function LibraryFilters({
   state,
   onChange,
+  isSearching = false,
 }: {
   state: LibraryFilterState;
   onChange: (next: LibraryFilterState) => void;
+  /** When true, render a spinner in the search input — set by the table while the /cards/search query is in flight. */
+  isSearching?: boolean;
 }) {
   const authors = useAuthors();
 
@@ -73,10 +79,22 @@ export function LibraryFilters({
       <Stack direction={{ xs: 'column', sm: 'row' }} gap={2}>
         <TextField
           label="Search text"
-          placeholder="substring match"
+          placeholder="substring across the full library"
           value={state.search}
           onChange={(e) => onChange({ ...state, search: e.target.value })}
           sx={{ flex: 1, minWidth: 240 }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchRoundedIcon fontSize="small" />
+              </InputAdornment>
+            ),
+            endAdornment: isSearching ? (
+              <InputAdornment position="end">
+                <CircularProgress size={16} />
+              </InputAdornment>
+            ) : null,
+          }}
         />
 
         <Autocomplete

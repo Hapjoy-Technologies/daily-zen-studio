@@ -6,20 +6,24 @@ import {
   AppBar,
   Box,
   Button,
+  IconButton,
   Stack,
   Toolbar,
+  Tooltip,
   Typography,
+  alpha,
 } from '@mui/material';
-import LibraryBooksIcon from '@mui/icons-material/LibraryBooks';
-import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
-import HistoryIcon from '@mui/icons-material/History';
-import LogoutIcon from '@mui/icons-material/Logout';
+import FavoriteRoundedIcon from '@mui/icons-material/FavoriteRounded';
+import LibraryBooksRoundedIcon from '@mui/icons-material/LibraryBooksRounded';
+import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import { useAuth } from './AuthGate';
 
 const NAV = [
-  { href: '/library', label: 'Library', icon: <LibraryBooksIcon fontSize="small" /> },
-  { href: '/build', label: 'Build month', icon: <CalendarMonthIcon fontSize="small" /> },
-  { href: '/past', label: 'Past months', icon: <HistoryIcon fontSize="small" /> },
+  { href: '/library', label: 'Library', icon: <LibraryBooksRoundedIcon fontSize="small" /> },
+  { href: '/build', label: 'Build month', icon: <CalendarMonthRoundedIcon fontSize="small" /> },
+  { href: '/past', label: 'Past months', icon: <HistoryRoundedIcon fontSize="small" /> },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -27,41 +31,57 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { signOut } = useAuth();
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
+    <Box sx={{ minHeight: '100vh' }}>
       <AppBar position="sticky">
-        <Toolbar sx={{ gap: 3, minHeight: 64 }}>
-          <Stack direction="row" alignItems="center" gap={1}>
+        <Toolbar sx={{ gap: 2, minHeight: { xs: 64, md: 72 } }}>
+          <Stack direction="row" alignItems="center" gap={1.25} component={Link} href="/library"
+            sx={{ textDecoration: 'none', color: 'inherit' }}
+          >
             <Box
               sx={{
                 width: 32,
                 height: 32,
                 borderRadius: '50%',
-                bgcolor: 'primary.main',
-                color: 'primary.contrastText',
                 display: 'grid',
                 placeItems: 'center',
-                fontWeight: 700,
+                background:
+                  'linear-gradient(135deg, #FFE1E6 0%, #FFC2CC 60%, #FFB2BC 100%)',
+                color: 'primary.main',
+                boxShadow: (t) =>
+                  `inset 0 -2px 4px ${alpha(t.palette.primary.main, 0.18)}, 0 2px 8px -2px ${alpha(t.palette.primary.main, 0.35)}`,
               }}
             >
-              DZ
+              <FavoriteRoundedIcon sx={{ fontSize: 18 }} />
             </Box>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+            <Typography
+              variant="subtitle1"
+              sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}
+            >
               Daily Zen Studio
             </Typography>
           </Stack>
 
-          <Stack direction="row" gap={0.5} sx={{ ml: 2 }}>
+          <Stack direction="row" gap={0.5} sx={{ ml: { xs: 1, md: 3 } }}>
             {NAV.map((n) => {
-              const active = pathname?.startsWith(n.href);
+              const active = pathname?.startsWith(n.href) ?? false;
               return (
                 <Button
                   key={n.href}
                   component={Link}
                   href={n.href}
                   startIcon={n.icon}
-                  variant={active ? 'contained' : 'text'}
-                  color={active ? 'primary' : 'inherit'}
                   size="small"
+                  disableElevation
+                  sx={(t) => ({
+                    color: active ? t.palette.primary.dark : t.palette.text.secondary,
+                    bgcolor: active ? t.palette.primary.light : 'transparent',
+                    fontWeight: active ? 700 : 500,
+                    '&:hover': {
+                      bgcolor: active
+                        ? alpha(t.palette.primary.main, 0.18)
+                        : alpha(t.palette.primary.main, 0.06),
+                    },
+                  })}
                 >
                   {n.label}
                 </Button>
@@ -71,18 +91,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <Box sx={{ flex: 1 }} />
 
-          <Button
-            color="inherit"
-            startIcon={<LogoutIcon fontSize="small" />}
-            onClick={signOut}
-            size="small"
-          >
-            Sign out
-          </Button>
+          <Tooltip title="Sign out">
+            <IconButton onClick={signOut} aria-label="Sign out">
+              <LogoutRoundedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
         </Toolbar>
       </AppBar>
 
-      <Box component="main" sx={{ px: { xs: 2, md: 4 }, py: 3 }}>
+      <Box
+        component="main"
+        sx={{
+          px: { xs: 2, md: 4, xl: 6 },
+          py: { xs: 3, md: 4 },
+          maxWidth: 1440,
+          mx: 'auto',
+        }}
+      >
         {children}
       </Box>
     </Box>

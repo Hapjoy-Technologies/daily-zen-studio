@@ -9,7 +9,9 @@ import {
   Stack,
   TextField,
   Typography,
+  alpha,
 } from '@mui/material';
+import FavoriteRoundedIcon from '@mui/icons-material/FavoriteRounded';
 import { setEditorPassword, clearEditorPassword } from '@/lib/auth/session';
 import { probeLogin } from '@/lib/api/meta';
 import { ApiError } from '@/lib/api/types';
@@ -50,28 +52,51 @@ export function Login({ onAuthed }: { onAuthed: () => void }) {
         minHeight: '100vh',
         display: 'grid',
         placeItems: 'center',
-        bgcolor: 'background.default',
         p: 3,
       }}
     >
       <Paper
         elevation={0}
-        sx={{
+        sx={(t) => ({
           width: '100%',
-          maxWidth: 420,
-          p: 4,
-          borderRadius: '28px',
-          border: (t) => `1px solid ${t.palette.divider}`,
-        }}
+          maxWidth: 480,
+          p: { xs: 4, md: 5 },
+          borderRadius: '32px',
+          border: `1px solid ${t.palette.divider}`,
+          backgroundColor: alpha(t.palette.background.paper, 0.85),
+          backdropFilter: 'blur(14px) saturate(140%)',
+          boxShadow:
+            `0 30px 80px -32px ${alpha(t.palette.primary.main, 0.30)}, ` +
+            `0 8px 24px -12px ${alpha(t.palette.primary.main, 0.18)}`,
+        })}
       >
-        <Stack spacing={3} component="form" onSubmit={submit}>
-          <Stack spacing={0.5}>
-            <Typography variant="h5" sx={{ fontWeight: 700 }}>
-              Daily Zen Studio
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Internal tool. Enter the editor password to continue.
-            </Typography>
+        <Stack spacing={3.5} component="form" onSubmit={submit}>
+          <Stack spacing={2} alignItems="flex-start">
+            <Box
+              sx={(t) => ({
+                width: 56,
+                height: 56,
+                borderRadius: '50%',
+                display: 'grid',
+                placeItems: 'center',
+                background:
+                  'linear-gradient(135deg, #FFE1E6 0%, #FFC2CC 60%, #FFB2BC 100%)',
+                color: t.palette.primary.main,
+                boxShadow:
+                  `inset 0 -3px 6px ${alpha(t.palette.primary.main, 0.18)}, ` +
+                  `0 6px 16px -6px ${alpha(t.palette.primary.main, 0.45)}`,
+              })}
+            >
+              <FavoriteRoundedIcon sx={{ fontSize: 28 }} />
+            </Box>
+            <Stack spacing={0.75}>
+              <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: '-0.018em' }}>
+                Daily Zen Studio
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Internal scheduling tool. Enter the shared editor password to continue.
+              </Typography>
+            </Stack>
           </Stack>
 
           {!apiBase && (
@@ -100,6 +125,7 @@ export function Login({ onAuthed }: { onAuthed: () => void }) {
             size="large"
             disabled={loading || !pwd}
             startIcon={loading ? <CircularProgress size={16} color="inherit" /> : null}
+            sx={{ py: 1.25 }}
           >
             {loading ? 'Checking…' : 'Sign in'}
           </Button>

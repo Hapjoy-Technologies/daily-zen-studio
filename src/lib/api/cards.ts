@@ -19,6 +19,18 @@ export async function listCards(params: ListCardsParams = {}): Promise<CardsPage
   return CardsPageSchema.parse(raw);
 }
 
+/**
+ * Full-library text search. Matches the needle (case-insensitive) against
+ * `text` and `author` server-side; cursor is always null because results
+ * are served from the Lambda's in-memory card cache.
+ */
+export async function searchCards(q: string, limit = 100): Promise<CardsPage> {
+  const raw = await apiRequest<unknown>('/cards/search', {
+    query: { q, limit },
+  });
+  return CardsPageSchema.parse(raw);
+}
+
 export async function getCard(cardId: string): Promise<LibraryCard> {
   const raw = await apiRequest<unknown>(`/cards/${encodeURIComponent(cardId)}`);
   return LibraryCardSchema.parse(raw);
