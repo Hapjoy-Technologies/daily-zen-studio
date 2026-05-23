@@ -66,12 +66,9 @@ export function ImageViewerDialog({
               position: 'relative',
               width: '100%',
               aspectRatio: '1 / 1',
-              backgroundImage: card.latestBgImageUrl
-                ? `url(${card.latestBgImageUrl})`
-                : `linear-gradient(135deg, ${alpha(accent, 0.3)} 0%, ${alpha(accent, 0.1)} 100%)`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              backgroundColor: alpha(accent, 0.08),
+              // Soft per-theme tint behind the dz image — only visible if the
+              // dz image is missing or has transparent regions.
+              backgroundImage: `linear-gradient(135deg, ${alpha(accent, 0.16)} 0%, ${alpha(accent, 0.04)} 100%)`,
             }}
           >
             {card.latestDzImageUrl && (
@@ -115,16 +112,16 @@ export function ImageViewerDialog({
             </Stack>
           )}
 
-          <Stack
-            direction="row"
-            gap={2}
-            sx={{
-              px: 2.5,
-              py: 1.5,
-              borderTop: (t) => `1px solid ${t.palette.divider}`,
-            }}
-          >
-            {card.latestDzImageUrl && (
+          {card.latestDzImageUrl && (
+            <Stack
+              direction="row"
+              gap={2}
+              sx={{
+                px: 2.5,
+                py: 1.5,
+                borderTop: (t) => `1px solid ${t.palette.divider}`,
+              }}
+            >
               <MuiLink
                 href={card.latestDzImageUrl}
                 target="_blank"
@@ -132,21 +129,10 @@ export function ImageViewerDialog({
                 underline="hover"
                 variant="caption"
               >
-                Foreground image <OpenInNewRoundedIcon sx={{ fontSize: 12, verticalAlign: '-2px' }} />
+                Open image in new tab <OpenInNewRoundedIcon sx={{ fontSize: 12, verticalAlign: '-2px' }} />
               </MuiLink>
-            )}
-            {card.latestBgImageUrl && (
-              <MuiLink
-                href={card.latestBgImageUrl}
-                target="_blank"
-                rel="noreferrer"
-                underline="hover"
-                variant="caption"
-              >
-                Background image <OpenInNewRoundedIcon sx={{ fontSize: 12, verticalAlign: '-2px' }} />
-              </MuiLink>
-            )}
-          </Stack>
+            </Stack>
+          )}
         </Stack>
       </DialogContent>
     </Dialog>
