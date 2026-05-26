@@ -143,8 +143,8 @@ export function LibraryTable({
                     <CardPreview card={c} size="sm" />
                   </TableCell>
                   <TableCell>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {c.text || c.themeTitle || '(blog/story)'}
+                    <Typography variant="body2" sx={{ fontWeight: 600, wordBreak: 'break-all' }}>
+                      {c.text || c.articleUrl || c.themeTitle || '(blog/story)'}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       {c.cardId}

@@ -115,7 +115,7 @@ export function CardSummary({ card }: { card: LibraryCard }) {
         {card.status === 'retired' && <ThemeChip theme="retired" variant="outlined" />}
       </Stack>
       <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
-        {card.text || card.themeTitle || '(no text)'}
+        {card.text || card.articleUrl || card.themeTitle || '(no text)'}
       </Typography>
       {card.author && (
         <Typography variant="caption" color="text.secondary" noWrap>

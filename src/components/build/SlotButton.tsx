@@ -156,9 +156,10 @@ export function SlotButton({
                 WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
                 color: 'text.primary',
+                wordBreak: 'break-all',
               }}
             >
-              {card.text || card.themeTitle || '(blog/story)'}
+              {card.text || card.articleUrl || card.themeTitle || '(blog/story)'}
             </Typography>
             {card.author && (
               <Typography variant="caption" color="text.secondary">— {card.author}</Typography>

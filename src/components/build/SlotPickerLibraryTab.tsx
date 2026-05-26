@@ -65,8 +65,8 @@ export function SlotPickerLibraryTab({
             >
               <CardPreview card={c} size="sm" />
               <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                  {c.text || c.themeTitle || '(blog/story)'}
+                <Typography variant="body2" sx={{ fontWeight: 600, wordBreak: 'break-all' }}>
+                  {c.text || c.articleUrl || c.themeTitle || '(blog/story)'}
                 </Typography>
                 {c.author && (
                   <Typography variant="caption" color="text.secondary">— {c.author}</Typography>

@@ -75,7 +75,7 @@ export function ImageViewerDialog({
               <Box
                 component="img"
                 src={card.latestDzImageUrl}
-                alt={card.text || card.themeTitle || 'Daily Zen card'}
+                alt={card.text || card.articleUrl || card.themeTitle || 'Daily Zen card'}
                 loading="eager"
                 decoding="async"
                 sx={{
