@@ -7,26 +7,61 @@ import { MonthEditor } from '@/components/months/MonthEditor';
 
 type Selection = { year: number; month: number };
 
+const YM_RE = /^(\d{4})_(\d{2})$/;
+
 function defaultSelection(): Selection {
   const now = new Date();
   return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
+function parseYm(value: string | null): Selection | null {
+  if (!value) return null;
+  const match = YM_RE.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (Number.isNaN(year) || Number.isNaN(month)) return null;
+  if (month < 1 || month > 12) return null;
+  return { year, month };
+}
+
+/**
+ * Read `?ym=YYYY_MM` from the current URL on mount. We use window.location
+ * directly instead of useSearchParams so static export doesn't need a
+ * <Suspense> wrapper around the whole page.
+ */
+function readYmFromLocation(): Selection | null {
+  if (typeof window === 'undefined') return null;
+  const ym = new URLSearchParams(window.location.search).get('ym');
+  return parseYm(ym);
+}
+
 export default function MonthsPage() {
   const months = useMonths();
   const [selected, setSelected] = React.useState<Selection>(defaultSelection);
+  const [didApplyDeepLink, setDidApplyDeepLink] = React.useState(false);
 
-  // If the server has any rows, prefer the newest one over the default.
-  // Only run once on first successful fetch.
+  // ?ym=YYYY_MM deep-links — used by the Library's "Add to month" shortcut.
+  // Read once on mount; we don't keep the URL in sync as the user clicks
+  // around the sidebar.
+  React.useEffect(() => {
+    const fromUrl = readYmFromLocation();
+    if (fromUrl) {
+      setSelected(fromUrl);
+      setDidApplyDeepLink(true);
+    }
+  }, []);
+
+  // If the user didn't deep-link and the server has rows, prefer the newest.
   const adjusted = React.useRef(false);
   React.useEffect(() => {
-    if (adjusted.current) return;
+    if (adjusted.current || didApplyDeepLink) return;
     if (months.data && months.data.length > 0) {
       const newest = months.data[0]; // server returns descending
       setSelected({ year: newest.year, month: newest.month });
       adjusted.current = true;
     }
-  }, [months.data]);
+  }, [months.data, didApplyDeepLink]);
 
   return (
     <Stack spacing={3}>

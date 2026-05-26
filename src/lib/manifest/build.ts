@@ -70,26 +70,30 @@ export function idMapToMonthDraft(
 }
 
 /**
- * Convert an in-memory MonthDraft → server-side IdMap. Only includes days
- * where ALL 6 themed slots are populated — partial days are dropped (they're
- * invalid by the SLOTS_PER_DAY check on the server anyway).
+ * Convert an in-memory MonthDraft → server-side IdMap.
  *
- * Use `monthDraftToIdMapPermissive` if you want to PUT partial work in
- * progress (callers must ensure every day has 6 IDs before publish).
+ * Each day's slot array is length-6 in fixed theme order; empty slots are
+ * encoded as `""` so partial days can be saved as drafts. Days where ALL
+ * six slots are empty are omitted entirely.
+ *
+ * The Lambda accepts empty strings in slots for save; Publish refuses if
+ * any slot is empty (apps need a full day).
  */
 export function monthDraftToIdMap(draft: MonthDraft): MonthIdMap {
   const out: MonthIdMap = {};
   for (const [iso, slots] of Object.entries(draft.days)) {
     const ids: string[] = [];
+    let filled = 0;
     for (const theme of THEME_ORDER as readonly ThemeName[]) {
       const card = slots?.[theme];
-      if (!card) {
-        ids.length = 0;
-        break;
+      if (card) {
+        ids.push(card.cardId);
+        filled++;
+      } else {
+        ids.push('');
       }
-      ids.push(card.cardId);
     }
-    if (ids.length === THEME_ORDER.length) {
+    if (filled > 0) {
       out[manifestDateKey(iso)] = ids;
     }
   }
@@ -97,9 +101,19 @@ export function monthDraftToIdMap(draft: MonthDraft): MonthIdMap {
 }
 
 /**
- * Build the apps-facing manifest from an IdMap + a cardsById lookup. Slots
- * that fail to resolve return null in the corresponding entry, and the
- * caller is expected to have blocked Publish before calling this.
+ * Build the apps-facing manifest from an IdMap + a cardsById lookup.
+ *
+ * Empty-string slots are skipped silently — those are intentional
+ * placeholders for unfilled slots in a partial-day draft, and the apps
+ * gracefully render fewer than 6 entries when that happens.
+ *
+ * `missing` only contains slots that referenced a non-empty cardId that
+ * couldn't be resolved (the card was deleted) — callers should block
+ * Publish on that.
+ *
+ * Days that end up with zero resolved entries (all slots empty) are
+ * omitted from the manifest entirely so the apps fall back to their
+ * "no content for today" state.
  */
 export function buildResolvedManifest(
   idMap: MonthIdMap,
@@ -112,14 +126,18 @@ export function buildResolvedManifest(
     const entries: ManifestEntry[] = [];
     const ids = idMap[dateKey];
     for (let i = 0; i < ids.length; i++) {
-      const card = cardsById.get(ids[i]);
+      const id = ids[i];
+      if (!id) continue; // empty placeholder — skip silently
+      const card = cardsById.get(id);
       if (!card) {
-        missing.push({ dateKey, slot: i, id: ids[i] });
+        missing.push({ dateKey, slot: i, id });
         continue;
       }
       entries.push(libraryCardToManifestEntry(card));
     }
-    manifest[dateKey] = entries;
+    if (entries.length > 0) {
+      manifest[dateKey] = entries;
+    }
   }
   return { manifest, missing };
 }

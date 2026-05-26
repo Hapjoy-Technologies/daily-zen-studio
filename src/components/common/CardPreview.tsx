@@ -21,11 +21,12 @@ export function CardPreview({
   enableZoom = true,
 }: {
   card: LibraryCard;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   /** Set to false to opt out of the click-to-preview behavior (and the cursor). */
   enableZoom?: boolean;
 }) {
-  const dim = size === 'lg' ? 240 : size === 'md' ? 160 : 96;
+  const dim =
+    size === 'lg' ? 240 : size === 'md' ? 160 : size === 'xs' ? 40 : 96;
   const accent = themeAccent[card.theme] ?? '#E84A7A';
   const fallback = `linear-gradient(135deg, ${alpha(accent, 0.30)} 0%, ${alpha(accent, 0.10)} 100%)`;
   const [open, setOpen] = React.useState(false);

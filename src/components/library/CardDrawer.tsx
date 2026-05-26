@@ -11,25 +11,32 @@ import {
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteIcon from '@mui/icons-material/Delete';
+import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded';
 import type { LibraryCard } from '@/lib/api/types';
 import { useDeleteCard, useUpdateCard } from '@/lib/queries/cards';
+import { RETIRED_THEMES } from '@/lib/constants';
 import { CardForm } from './CardForm';
 import { CardPreview } from '@/components/common/CardPreview';
 import { ThemeChip } from '@/components/common/ThemeChip';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { AddToMonthDialog } from './AddToMonthDialog';
 
 export function CardDrawer({
   card,
   open,
   onClose,
+  onSaved,
 }: {
   card: LibraryCard | null;
   open: boolean;
   onClose: () => void;
+  /** Optional: fires when an edit successfully lands. Receives the updated card. */
+  onSaved?: (updated: LibraryCard) => void;
 }) {
   const update = useUpdateCard();
   const del = useDeleteCard();
   const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [addToMonthOpen, setAddToMonthOpen] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -81,14 +88,34 @@ export function CardDrawer({
             update.mutate(
               { cardId: card.cardId, patch: values },
               {
-                onSuccess: onClose,
+                onSuccess: (updated) => {
+                  onSaved?.(updated);
+                  onClose();
+                },
                 onError: (e) => setError(e instanceof Error ? e.message : 'Failed to save.'),
               },
             );
           }}
         />
 
-        <Box sx={{ borderTop: (t) => `1px solid ${t.palette.divider}`, pt: 2 }}>
+        <Stack
+          direction="row"
+          gap={1}
+          flexWrap="wrap"
+          sx={{ borderTop: (t) => `1px solid ${t.palette.divider}`, pt: 2 }}
+        >
+          <Button
+            startIcon={<EventAvailableRoundedIcon />}
+            onClick={() => setAddToMonthOpen(true)}
+            disabled={
+              RETIRED_THEMES.includes(card.theme as (typeof RETIRED_THEMES)[number]) ||
+              (card.status ?? 'active') === 'retired'
+            }
+            variant="outlined"
+          >
+            Add to month…
+          </Button>
+          <Box sx={{ flex: 1 }} />
           <Button
             startIcon={<DeleteIcon />}
             color="error"
@@ -97,7 +124,7 @@ export function CardDrawer({
           >
             Delete card
           </Button>
-        </Box>
+        </Stack>
 
         {del.error && (
           <Alert severity="error">{del.error instanceof Error ? del.error.message : 'Delete failed.'}</Alert>
@@ -119,6 +146,12 @@ export function CardDrawer({
             },
           });
         }}
+      />
+
+      <AddToMonthDialog
+        open={addToMonthOpen}
+        card={card}
+        onClose={() => setAddToMonthOpen(false)}
       />
     </Drawer>
   );

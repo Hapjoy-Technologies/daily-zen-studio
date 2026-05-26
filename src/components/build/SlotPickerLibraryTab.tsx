@@ -2,18 +2,22 @@
 import * as React from 'react';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   CircularProgress,
   List,
   ListItemButton,
+  MenuItem,
   Stack,
   TextField,
   Typography,
 } from '@mui/material';
-import type { LibraryCard } from '@/lib/api/types';
+import type { LibraryCard, SortKey } from '@/lib/api/types';
 import { useInfiniteCards } from '@/lib/queries/cards';
+import { useAuthors } from '@/lib/queries/meta';
 import { CardPreview } from '@/components/common/CardPreview';
+import { SORT_LABEL } from '@/components/library/LibraryFilters';
 
 export function SlotPickerLibraryTab({
   theme,
@@ -22,32 +26,66 @@ export function SlotPickerLibraryTab({
   theme: string;
   onPick: (card: LibraryCard) => void;
 }) {
-  const query = useInfiniteCards({ theme, status: 'active' });
   const [search, setSearch] = React.useState('');
+  const [sort, setSort] = React.useState<SortKey>('lru');
+  const [author, setAuthor] = React.useState<string | null>(null);
 
+  const query = useInfiniteCards({
+    theme,
+    status: 'active',
+    sort,
+    author: author ?? undefined,
+  });
+  const authors = useAuthors();
+
+  // Server returns the slice pre-sorted; we still filter client-side by the
+  // free-text needle over what's been loaded so far. Full-library search
+  // inside the picker is intentionally out of scope.
   const items = React.useMemo<LibraryCard[]>(() => {
     const all = query.data?.pages.flatMap((p) => p.items) ?? [];
-    // Sort by least-recently-used (ascending lastUsedOn; empty = never used = top).
-    const sorted = [...all].sort((a, b) =>
-      (a.lastUsedOn || '0000-00-00').localeCompare(b.lastUsedOn || '0000-00-00'),
-    );
     const needle = search.trim().toLowerCase();
-    if (!needle) return sorted;
-    return sorted.filter((c) =>
-      `${c.text ?? ''} ${c.author ?? ''}`.toLowerCase().includes(needle),
+    if (!needle) return all;
+    return all.filter((c) =>
+      `${c.text ?? ''} ${c.author ?? ''} ${c.articleUrl ?? ''}`.toLowerCase().includes(needle),
     );
   }, [query.data, search]);
 
   return (
     <Stack spacing={2}>
-      <TextField
-        placeholder="Search by text or author"
-        size="small"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        fullWidth
-        autoFocus
-      />
+      <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5}>
+        <TextField
+          placeholder="Search by text or author"
+          size="small"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          sx={{ flex: 1, minWidth: 200 }}
+          autoFocus
+        />
+        <Autocomplete
+          size="small"
+          options={authors.data ?? []}
+          getOptionLabel={(o) => `${o.author} (${o.count} active)`}
+          value={authors.data?.find((a) => a.author === author) ?? null}
+          onChange={(_, v) => setAuthor(v?.author ?? null)}
+          loading={authors.isLoading}
+          sx={{ minWidth: 200, flex: 1 }}
+          renderInput={(p) => <TextField {...p} label="Author" />}
+        />
+        <TextField
+          select
+          size="small"
+          label="Sort"
+          value={sort}
+          onChange={(e) => setSort(e.target.value as SortKey)}
+          sx={{ minWidth: 180 }}
+        >
+          {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
+            <MenuItem key={k} value={k}>
+              {SORT_LABEL[k]}
+            </MenuItem>
+          ))}
+        </TextField>
+      </Stack>
 
       {query.isError && (
         <Alert severity="error">
@@ -87,7 +125,7 @@ export function SlotPickerLibraryTab({
 
       <Stack direction="row" justifyContent="space-between" alignItems="center">
         <Typography variant="caption" color="text.secondary">
-          {items.length} card{items.length === 1 ? '' : 's'} shown · sorted by least-recently-used
+          {items.length} card{items.length === 1 ? '' : 's'} shown · sort: {SORT_LABEL[sort]}
         </Typography>
         {query.hasNextPage && (
           <Button

@@ -44,7 +44,11 @@ import {
 } from '@/lib/queries/months';
 import { MonthGrid } from '@/components/build/MonthGrid';
 import { SlotPicker } from '@/components/build/SlotPicker';
+import { CardDrawer } from '@/components/library/CardDrawer';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { CardPreview } from '@/components/common/CardPreview';
+import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
 
 const STATUS_LABEL = {
   published: 'Published',
@@ -100,8 +104,14 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
   const allIds = React.useMemo(() => {
     if (!row) return [] as string[];
     const set = new Set<string>();
-    for (const ids of Object.values(row.draft ?? {})) ids.forEach((id) => set.add(id));
-    for (const ids of Object.values(row.published ?? {})) ids.forEach((id) => set.add(id));
+    // Empty strings represent "slot not filled yet" — skip them so the bulk
+    // lookup endpoint (which rejects empty IDs) only sees real card IDs.
+    for (const ids of Object.values(row.draft ?? {})) {
+      for (const id of ids) if (id) set.add(id);
+    }
+    for (const ids of Object.values(row.published ?? {})) {
+      for (const id of ids) if (id) set.add(id);
+    }
     return Array.from(set);
   }, [row]);
 
@@ -118,6 +128,8 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
   const [localDraft, setLocalDraft] = React.useState<MonthDraft | null>(null);
   const [baseVersion, setBaseVersion] = React.useState<number>(0);
   const [picker, setPicker] = React.useState<{ date: string; theme: string } | null>(null);
+  const [chooser, setChooser] = React.useState<{ date: string; theme: string; card: LibraryCard } | null>(null);
+  const [editing, setEditing] = React.useState<{ date: string; theme: string; card: LibraryCard } | null>(null);
   const [discardOpen, setDiscardOpen] = React.useState(false);
   const [publishOpen, setPublishOpen] = React.useState(false);
   const [conflictOpen, setConflictOpen] = React.useState(false);
@@ -148,6 +160,41 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
   const saveMut = useSaveMonthDraft(year, month);
   const publishMut = usePublishMonth(year, month);
   const discardMut = useDiscardMonthDraft(year, month);
+
+  /**
+   * Click handler for a slot. Empty → go straight to the picker.
+   * Filled → ask whether to Replace or Edit.
+   */
+  function onSlotClick(date: string, theme: string) {
+    const card = localDraft?.days[date]?.[theme] ?? null;
+    if (card) {
+      setChooser({ date, theme, card });
+    } else {
+      setPicker({ date, theme });
+    }
+  }
+
+  /** Update every occurrence of a card in the local draft with a refreshed copy. */
+  function replaceCardEverywhere(updated: LibraryCard) {
+    setLocalDraft((prev) => {
+      if (!prev) return prev;
+      const days: MonthDraft['days'] = {};
+      let changed = false;
+      for (const [date, slots] of Object.entries(prev.days)) {
+        const next = { ...(slots ?? {}) };
+        for (const theme of Object.keys(next)) {
+          if (next[theme]?.cardId === updated.cardId) {
+            next[theme] = updated;
+            changed = true;
+          }
+        }
+        days[date] = next;
+      }
+      return changed
+        ? { ...prev, days, updatedAt: new Date().toISOString() }
+        : prev;
+    });
+  }
 
   function assignSlot(date: string, theme: string, card: LibraryCard) {
     setLocalDraft((prev) => {
@@ -187,29 +234,37 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
     return !idMapsEqual(localIdMap, row.draft);
   }, [localIdMap, row, localDraft]);
 
-  const filledDays = React.useMemo(() => Object.keys(localIdMap).length, [localIdMap]);
-  const partialDays = React.useMemo(() => {
+  const monthDates = React.useMemo(() => listMonthDates(year, month), [year, month]);
+  const fullyFilledDays = React.useMemo(() => {
     if (!localDraft) return [] as string[];
-    const out: string[] = [];
-    for (const [date, slots] of Object.entries(localDraft.days)) {
-      const count = THEME_ORDER.filter((t) => slots?.[t]).length;
-      if (count > 0 && count < THEME_ORDER.length) out.push(date);
-    }
-    return out;
-  }, [localDraft]);
-  const emptyDays = React.useMemo(() => {
-    if (!localDraft) return [] as string[];
-    return Object.keys(localDraft.days).filter(
-      (d) => THEME_ORDER.filter((t) => localDraft.days[d]?.[t]).length === 0,
+    return monthDates.filter(
+      (d) => THEME_ORDER.every((t) => localDraft.days[d]?.[t]),
     );
-  }, [localDraft]);
+  }, [localDraft, monthDates]);
+  const incompleteDays = React.useMemo(() => {
+    if (!localDraft) return [] as string[];
+    return monthDates.filter(
+      (d) => !THEME_ORDER.every((t) => localDraft.days[d]?.[t]),
+    );
+  }, [localDraft, monthDates]);
+  const filledSlotCount = React.useMemo(() => {
+    if (!localDraft) return 0;
+    let n = 0;
+    for (const d of monthDates) {
+      for (const t of THEME_ORDER) if (localDraft.days[d]?.[t]) n++;
+    }
+    return n;
+  }, [localDraft, monthDates]);
 
-  const canSave = dirty && partialDays.length === 0 && !saveMut.isPending;
+  // Save: any non-empty change is saveable. Partial days are fine.
+  const canSave = dirty && !saveMut.isPending;
   const draftEqualsPublished = row?.published && idMapsEqual(localIdMap, row.published);
+  // Publish: the saved draft must have at least one filled slot somewhere
+  // and must differ from what's currently published. Partial days are
+  // allowed — the manifest just omits the empty entries.
   const canPublish =
     Boolean(row) &&
-    Object.keys(localIdMap).length === listMonthDates(year, month).length &&
-    partialDays.length === 0 &&
+    filledSlotCount > 0 &&
     !dirty && // must Save first
     !draftEqualsPublished &&
     !publishMut.isPending;
@@ -312,15 +367,7 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
         </Stack>
 
         <Stack direction="row" gap={1} flexWrap="wrap">
-          <Tooltip
-            title={
-              !dirty
-                ? 'No changes to save.'
-                : partialDays.length > 0
-                ? 'Each edited day must have all 6 slots filled (or none).'
-                : ''
-            }
-          >
+          <Tooltip title={!dirty ? 'No changes to save.' : ''}>
             <span>
               <Button
                 onClick={onSave}
@@ -336,8 +383,8 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
             title={
               dirty
                 ? 'Save your draft first.'
-                : emptyDays.length > 0
-                ? `${emptyDays.length} day(s) still empty.`
+                : filledSlotCount === 0
+                ? 'Fill at least one slot before publishing.'
                 : draftEqualsPublished
                 ? 'Draft already matches the published version.'
                 : ''
@@ -381,7 +428,8 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
 
       <Stack direction="row" gap={2} flexWrap="wrap" sx={{ color: 'text.secondary' }}>
         <Typography variant="caption">
-          {filledDays} / {listMonthDates(year, month).length} days fully scheduled
+          {fullyFilledDays.length} / {monthDates.length} days fully scheduled ·{' '}
+          {filledSlotCount} / {monthDates.length * THEME_ORDER.length} slots filled
         </Typography>
         {row?.draftUpdatedAt && (
           <Typography variant="caption">
@@ -415,7 +463,7 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
           year={year}
           month={month}
           draft={localDraft}
-          onSlotClick={(date, theme) => setPicker({ date, theme })}
+          onSlotClick={onSlotClick}
           onSlotClear={clearSlot}
         />
       ) : (
@@ -433,6 +481,75 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
           onAssign={(card) => assignSlot(picker.date, picker.theme, card)}
         />
       )}
+
+      <Dialog
+        open={chooser !== null}
+        onClose={() => setChooser(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>What would you like to do?</DialogTitle>
+        <DialogContent>
+          {chooser && (
+            <Stack direction="row" gap={2} alignItems="flex-start" sx={{ mb: 1 }}>
+              <CardPreview card={chooser.card} size="sm" />
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography variant="caption" color="text.secondary">
+                  {chooser.date} ·{' '}
+                  {THEME_LABELS[chooser.theme] ?? chooser.theme}
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600, wordBreak: 'break-all' }}>
+                  {chooser.card.text ||
+                    chooser.card.articleUrl ||
+                    chooser.card.themeTitle ||
+                    '(blog/story)'}
+                </Typography>
+                {chooser.card.author && (
+                  <Typography variant="caption" color="text.secondary">
+                    — {chooser.card.author}
+                  </Typography>
+                )}
+              </Box>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+          <Button onClick={() => setChooser(null)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              if (!chooser) return;
+              setPicker({ date: chooser.date, theme: chooser.theme });
+              setChooser(null);
+            }}
+            startIcon={<SwapHorizRoundedIcon />}
+            variant="outlined"
+          >
+            Replace
+          </Button>
+          <Button
+            onClick={() => {
+              if (!chooser) return;
+              setEditing(chooser);
+              setChooser(null);
+            }}
+            startIcon={<EditRoundedIcon />}
+            variant="contained"
+          >
+            Edit card
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <CardDrawer
+        open={editing !== null}
+        card={editing?.card ?? null}
+        onClose={() => setEditing(null)}
+        onSaved={(updated) => {
+          // Refresh every slot that referenced this card; the row's
+          // draftVersion stays stable since the IDs didn't change.
+          replaceCardEverywhere(updated);
+        }}
+      />
 
       <Dialog
         open={publishOpen}

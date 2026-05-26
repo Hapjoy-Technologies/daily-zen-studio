@@ -6,6 +6,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import type { LibraryCard } from '@/lib/api/types';
 import { THEME_LABELS } from '@/lib/constants';
 import { themeAccent } from '@/lib/theme/tokens';
+import { CardPreview } from '@/components/common/CardPreview';
 
 export function SlotButton({
   theme,
@@ -112,35 +113,13 @@ export function SlotButton({
         }}
       >
         <Stack direction="row" gap={1} alignItems="center">
-          <Box
-            sx={{
-              width: 40,
-              height: 40,
-              borderRadius: 1.5,
-              overflow: 'hidden',
-              backgroundImage: card.latestDzImageUrl
-                ? undefined
-                : `linear-gradient(135deg, ${alpha(accent, 0.3)} 0%, ${alpha(accent, 0.1)} 100%)`,
-              backgroundColor: alpha(accent, 0.15),
-              flexShrink: 0,
-            }}
-          >
-            {card.latestDzImageUrl && (
-              <Box
-                component="img"
-                src={card.latestDzImageUrl}
-                alt=""
-                loading="lazy"
-                decoding="async"
-                sx={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                  display: 'block',
-                }}
-              />
-            )}
-          </Box>
+          {/*
+            CardPreview at size="xs" (40px) gives us the lazy-loaded thumbnail
+            plus the click-to-zoom dialog used everywhere else in the app.
+            The preview's onClick stopPropagation prevents the slot's outer
+            ButtonBase (Replace/Edit chooser) from also firing.
+          */}
+          <CardPreview card={card} size="xs" />
           <Box sx={{ minWidth: 0, flex: 1 }}>
             <Typography
               variant="caption"
