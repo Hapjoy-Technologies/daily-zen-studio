@@ -48,3 +48,8 @@ export const BulkUpdateResponseSchema = z.object({
   updated: z.array(z.string()),
   missing: z.array(z.string()),
 });
+
+export const CardsLookupResponseSchema = z.object({
+  items: z.array(LibraryCardSchema),
+  missing: z.array(z.string()),
+});

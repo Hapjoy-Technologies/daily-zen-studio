@@ -100,7 +100,7 @@ export function LibraryFilters({
 
         <Autocomplete
           options={authors.data ?? []}
-          getOptionLabel={(o) => `${o.author} (${o.count})`}
+          getOptionLabel={(o) => `${o.author} (${o.count} active)`}
           value={authors.data?.find((a) => a.author === state.author) ?? null}
           onChange={(_, v) => onChange({ ...state, author: v?.author ?? null })}
           loading={authors.isLoading}

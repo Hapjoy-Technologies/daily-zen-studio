@@ -16,14 +16,12 @@ import {
 import FavoriteRoundedIcon from '@mui/icons-material/FavoriteRounded';
 import LibraryBooksRoundedIcon from '@mui/icons-material/LibraryBooksRounded';
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
-import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import { useAuth } from './AuthGate';
 
 const NAV = [
   { href: '/library', label: 'Library', icon: <LibraryBooksRoundedIcon fontSize="small" /> },
-  { href: '/build', label: 'Build month', icon: <CalendarMonthRoundedIcon fontSize="small" /> },
-  { href: '/past', label: 'Past months', icon: <HistoryRoundedIcon fontSize="small" /> },
+  { href: '/months', label: 'Months', icon: <CalendarMonthRoundedIcon fontSize="small" /> },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

@@ -3,6 +3,7 @@ import {
   CardsPageSchema,
   LibraryCardSchema,
   BulkUpdateResponseSchema,
+  CardsLookupResponseSchema,
 } from './schemas';
 import type { CardsPage, LibraryCard, ListCardsParams } from './types';
 
@@ -80,4 +81,21 @@ export async function bulkUpdate(cardIds: string[], patch: EditableCardFields) {
     body: { cardIds, patch },
   });
   return BulkUpdateResponseSchema.parse(raw);
+}
+
+/**
+ * Resolve a batch of cardIds in one request. Used by the Month editor to
+ * render all 186-ish slots of a month and again at Publish time to build
+ * the manifest. Returns `items` in request order for IDs that were found,
+ * plus a `missing` list for IDs that weren't.
+ */
+export async function lookupCards(
+  ids: string[],
+): Promise<{ items: LibraryCard[]; missing: string[] }> {
+  if (ids.length === 0) return { items: [], missing: [] };
+  const raw = await apiRequest<unknown>('/cards/lookup', {
+    method: 'POST',
+    body: { ids },
+  });
+  return CardsLookupResponseSchema.parse(raw);
 }

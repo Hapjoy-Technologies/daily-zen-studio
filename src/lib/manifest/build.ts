@@ -1,6 +1,11 @@
 import type { LibraryCard } from '@/lib/api/types';
 import { THEME_ORDER, THEME_TITLES, type ThemeName } from '@/lib/constants';
-import type { ManifestEntry, MonthDraft, MonthManifest } from './types';
+import type {
+  ManifestEntry,
+  MonthDraft,
+  MonthIdMap,
+  MonthManifest,
+} from './types';
 
 /** Convert a library card into the flattened manifest-entry shape the apps consume. */
 export function libraryCardToManifestEntry(c: LibraryCard): ManifestEntry {
@@ -28,6 +33,95 @@ export function pad2(n: number): string {
 /** YYYY-MM-DD → YYYYMMDD_en. */
 export function manifestDateKey(isoDate: string): string {
   return `${isoDate.replaceAll('-', '')}_en`;
+}
+
+/** YYYYMMDD_en → YYYY-MM-DD. */
+export function isoDateFromManifestKey(key: string): string {
+  return `${key.slice(0, 4)}-${key.slice(4, 6)}-${key.slice(6, 8)}`;
+}
+
+/**
+ * Convert a server-side IdMap → in-memory MonthDraft by resolving each ID via
+ * `cardsById`. IDs that don't resolve are silently skipped (UI flags them
+ * separately via the lookup `missing` set).
+ */
+export function idMapToMonthDraft(
+  year: number,
+  month: number,
+  idMap: MonthIdMap,
+  cardsById: ReadonlyMap<string, LibraryCard>,
+): MonthDraft {
+  const days: MonthDraft['days'] = {};
+  for (const [dateKey, ids] of Object.entries(idMap)) {
+    const iso = isoDateFromManifestKey(dateKey);
+    const slots: Partial<Record<string, LibraryCard>> = {};
+    for (let i = 0; i < THEME_ORDER.length && i < ids.length; i++) {
+      const id = ids[i];
+      const card = cardsById.get(id);
+      if (card) slots[THEME_ORDER[i]] = card;
+    }
+    days[iso] = slots;
+  }
+  return {
+    monthKey: `${year}-${pad2(month)}`,
+    days,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Convert an in-memory MonthDraft → server-side IdMap. Only includes days
+ * where ALL 6 themed slots are populated — partial days are dropped (they're
+ * invalid by the SLOTS_PER_DAY check on the server anyway).
+ *
+ * Use `monthDraftToIdMapPermissive` if you want to PUT partial work in
+ * progress (callers must ensure every day has 6 IDs before publish).
+ */
+export function monthDraftToIdMap(draft: MonthDraft): MonthIdMap {
+  const out: MonthIdMap = {};
+  for (const [iso, slots] of Object.entries(draft.days)) {
+    const ids: string[] = [];
+    for (const theme of THEME_ORDER as readonly ThemeName[]) {
+      const card = slots?.[theme];
+      if (!card) {
+        ids.length = 0;
+        break;
+      }
+      ids.push(card.cardId);
+    }
+    if (ids.length === THEME_ORDER.length) {
+      out[manifestDateKey(iso)] = ids;
+    }
+  }
+  return out;
+}
+
+/**
+ * Build the apps-facing manifest from an IdMap + a cardsById lookup. Slots
+ * that fail to resolve return null in the corresponding entry, and the
+ * caller is expected to have blocked Publish before calling this.
+ */
+export function buildResolvedManifest(
+  idMap: MonthIdMap,
+  cardsById: ReadonlyMap<string, LibraryCard>,
+): { manifest: MonthManifest; missing: Array<{ dateKey: string; slot: number; id: string }> } {
+  const manifest: MonthManifest = {};
+  const missing: Array<{ dateKey: string; slot: number; id: string }> = [];
+  const sortedKeys = Object.keys(idMap).sort();
+  for (const dateKey of sortedKeys) {
+    const entries: ManifestEntry[] = [];
+    const ids = idMap[dateKey];
+    for (let i = 0; i < ids.length; i++) {
+      const card = cardsById.get(ids[i]);
+      if (!card) {
+        missing.push({ dateKey, slot: i, id: ids[i] });
+        continue;
+      }
+      entries.push(libraryCardToManifestEntry(card));
+    }
+    manifest[dateKey] = entries;
+  }
+  return { manifest, missing };
 }
 
 /** Build the full manifest for a month from the editor draft, in fixed theme order. */

@@ -17,7 +17,7 @@ export function assertApiConfigured(): void {
 }
 
 type RequestOpts = {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   query?: Record<string, string | number | undefined | null>;
   /** Force-attach the editor password even on a GET (used by the login probe). */

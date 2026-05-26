@@ -31,3 +31,43 @@ export type MonthDraft = {
   days: Record<string, Partial<Record<string, LibraryCard>>>;
   updatedAt: string;
 };
+
+/**
+ * Server-side per-month plan. Each `YYYYMMDD_en` key maps to an array of 6
+ * cardIds in fixed theme order (see THEME_ORDER). Cards themselves are
+ * resolved client-side via /cards/lookup.
+ */
+export type MonthIdMap = Record<string, string[]>;
+
+/** Status chip shown in the sidebar; computed server-side from draft vs published. */
+export type MonthStatus =
+  | 'published'
+  | 'draft-changes'
+  | 'unpublished-draft'
+  | 'not-built';
+
+/** Lightweight row used by the sidebar — no draft/published maps. */
+export type MonthSummary = {
+  monthKey: string;
+  year: number;
+  month: number;
+  draftUpdatedAt?: string | null;
+  publishedAt?: string | null;
+  draftVersion: number;
+  publishVersion: number;
+  status: MonthStatus;
+};
+
+/** Full row used by the editor. */
+export type MonthRow = {
+  monthKey: string;
+  year: number;
+  month: number;
+  draft: MonthIdMap;
+  draftVersion: number;
+  draftUpdatedAt?: string | null;
+  published?: MonthIdMap | null;
+  publishVersion: number;
+  publishedAt?: string | null;
+  status: MonthStatus;
+};
