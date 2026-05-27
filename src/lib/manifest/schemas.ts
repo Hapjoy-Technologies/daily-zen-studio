@@ -39,6 +39,8 @@ export const MonthSummarySchema = z.object({
   publishedAt: z.string().nullable().optional(),
   draftVersion: z.number().default(0),
   publishVersion: z.number().default(0),
+  // Per-month Figma start index, used by the next month's import auto-suggest.
+  dzImageUrlStartIndex: z.number().nullable().optional(),
   status: MonthStatusSchema,
 });
 
@@ -52,6 +54,7 @@ export const MonthRowSchema = z.object({
   published: MonthIdMapSchema.nullable().optional(),
   publishVersion: z.number().default(0),
   publishedAt: z.string().nullable().optional(),
+  dzImageUrlStartIndex: z.number().nullable().optional(),
   status: MonthStatusSchema,
 });
 

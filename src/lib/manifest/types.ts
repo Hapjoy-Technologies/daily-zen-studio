@@ -55,6 +55,8 @@ export type MonthSummary = {
   publishedAt?: string | null;
   draftVersion: number;
   publishVersion: number;
+  /** Persisted when the month was imported from Figma. Drives the next month's auto-suggest. */
+  dzImageUrlStartIndex?: number | null;
   status: MonthStatus;
 };
 
@@ -69,5 +71,6 @@ export type MonthRow = {
   published?: MonthIdMap | null;
   publishVersion: number;
   publishedAt?: string | null;
+  dzImageUrlStartIndex?: number | null;
   status: MonthStatus;
 };

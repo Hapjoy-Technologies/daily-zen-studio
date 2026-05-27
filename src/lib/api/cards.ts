@@ -4,6 +4,7 @@ import {
   LibraryCardSchema,
   BulkUpdateResponseSchema,
   CardsLookupResponseSchema,
+  CardsMatchResponseSchema,
 } from './schemas';
 import type { CardsPage, LibraryCard, ListCardsParams } from './types';
 
@@ -98,4 +99,36 @@ export async function lookupCards(
     body: { ids },
   });
   return CardsLookupResponseSchema.parse(raw);
+}
+
+/**
+ * Exact-match dedup for the Figma import flow. For each `(theme, text)`
+ * or `(theme, articleUrl)` pair, find an active library card whose
+ * normalized content matches. One call resolves an entire month.
+ */
+export type CardsMatchEntry = {
+  theme: string;
+  text?: string;
+  articleUrl?: string;
+};
+export type CardsMatchHit = {
+  cardId: string;
+  text: string;
+  author: string;
+  articleUrl: string;
+};
+export async function matchCards(
+  entries: CardsMatchEntry[],
+): Promise<Array<CardsMatchHit | null>> {
+  if (entries.length === 0) return [];
+  const raw = await apiRequest<unknown>('/cards/match', {
+    method: 'POST',
+    body: { entries },
+  });
+  const parsed = CardsMatchResponseSchema.parse(raw);
+  const out: Array<CardsMatchHit | null> = new Array(entries.length).fill(null);
+  for (const r of parsed.results) {
+    if (r.match) out[r.index] = r.match;
+  }
+  return out;
 }

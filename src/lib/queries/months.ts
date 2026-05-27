@@ -55,8 +55,16 @@ export function useCardsLookup(ids: readonly string[], enabled = true) {
 export function useSaveMonthDraft(year: number, month: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ draft, ifMatch }: { draft: MonthIdMap; ifMatch: number | null }) =>
-      saveMonthDraft(year, month, draft, ifMatch),
+    mutationFn: ({
+      draft,
+      ifMatch,
+      dzImageUrlStartIndex,
+    }: {
+      draft: MonthIdMap;
+      ifMatch: number | null;
+      /** Optional. Set during Figma import to persist the per-month start index. */
+      dzImageUrlStartIndex?: number | null;
+    }) => saveMonthDraft(year, month, draft, ifMatch, dzImageUrlStartIndex),
     onSuccess: (row: MonthRow) => {
       qc.setQueryData(queryKeys.month(year, month), row);
       qc.invalidateQueries({ queryKey: queryKeys.months });

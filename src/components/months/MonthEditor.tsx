@@ -23,6 +23,7 @@ import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import PublishRoundedIcon from '@mui/icons-material/PublishRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded';
+import CloudDownloadRoundedIcon from '@mui/icons-material/CloudDownloadRounded';
 
 import type { LibraryCard } from '@/lib/api/types';
 import type { MonthDraft, MonthIdMap } from '@/lib/manifest/types';
@@ -47,6 +48,7 @@ import { SlotPicker } from '@/components/build/SlotPicker';
 import { CardDrawer } from '@/components/library/CardDrawer';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { CardPreview } from '@/components/common/CardPreview';
+import { FigmaImportDialog } from './FigmaImportDialog';
 import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 
@@ -133,6 +135,7 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
   const [discardOpen, setDiscardOpen] = React.useState(false);
   const [publishOpen, setPublishOpen] = React.useState(false);
   const [conflictOpen, setConflictOpen] = React.useState(false);
+  const [importOpen, setImportOpen] = React.useState(false);
 
   const monthKey = row?.monthKey;
   const ready =
@@ -367,6 +370,20 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
         </Stack>
 
         <Stack direction="row" gap={1} flexWrap="wrap">
+          <Tooltip title="Replace the month draft from a Figma strings.json export.">
+            <span>
+              <Button
+                onClick={() => setImportOpen(true)}
+                startIcon={<CloudDownloadRoundedIcon />}
+                disabled={
+                  saveMut.isPending || publishMut.isPending || discardMut.isPending
+                }
+                variant="text"
+              >
+                Import from Figma…
+              </Button>
+            </span>
+          </Tooltip>
           <Tooltip title={!dirty ? 'No changes to save.' : ''}>
             <span>
               <Button
@@ -629,6 +646,13 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <FigmaImportDialog
+        open={importOpen}
+        year={year}
+        month={month}
+        onClose={() => setImportOpen(false)}
+      />
 
       <Divider sx={{ visibility: 'hidden' }} />
     </Stack>

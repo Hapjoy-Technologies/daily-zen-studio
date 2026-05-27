@@ -27,15 +27,27 @@ export async function getMonth(year: number, month: number): Promise<MonthRow> {
  * `ifMatch` is the `draftVersion` the editor last loaded; when present, the
  * server returns 409 if another save raced in. Pass `null` to skip the
  * concurrency check (used for first-time saves on a brand-new month).
+ *
+ * `dzImageUrlStartIndex` (optional) is persisted on the row when set so
+ * the next month's Figma import can auto-suggest the next start index.
+ * Passing `null` clears the field.
  */
 export async function saveMonthDraft(
   year: number,
   month: number,
   draft: MonthIdMap,
   ifMatch: number | null,
+  dzImageUrlStartIndex?: number | null,
 ): Promise<MonthRow> {
-  const body: { draft: MonthIdMap; ifMatch?: number } = { draft };
+  const body: {
+    draft: MonthIdMap;
+    ifMatch?: number;
+    dzImageUrlStartIndex?: number | null;
+  } = { draft };
   if (ifMatch !== null) body.ifMatch = ifMatch;
+  if (dzImageUrlStartIndex !== undefined) {
+    body.dzImageUrlStartIndex = dzImageUrlStartIndex;
+  }
   const raw = await apiRequest<unknown>(monthPath(year, month), {
     method: 'PUT',
     body,

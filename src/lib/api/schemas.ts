@@ -53,3 +53,20 @@ export const CardsLookupResponseSchema = z.object({
   items: z.array(LibraryCardSchema),
   missing: z.array(z.string()),
 });
+
+/** POST /cards/match response — results preserve request order. */
+export const CardsMatchResponseSchema = z.object({
+  results: z.array(
+    z.object({
+      index: z.number(),
+      match: z
+        .object({
+          cardId: z.string(),
+          text: z.string().default(''),
+          author: z.string().default(''),
+          articleUrl: z.string().default(''),
+        })
+        .nullable(),
+    }),
+  ),
+});
