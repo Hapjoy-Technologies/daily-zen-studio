@@ -59,14 +59,9 @@ export const CardsMatchResponseSchema = z.object({
   results: z.array(
     z.object({
       index: z.number(),
-      match: z
-        .object({
-          cardId: z.string(),
-          text: z.string().default(''),
-          author: z.string().default(''),
-          articleUrl: z.string().default(''),
-        })
-        .nullable(),
+      // Full library card for the match (or null if none). Lets the import
+      // dialog render a preview and build a PATCH without a second fetch.
+      match: LibraryCardSchema.nullable(),
     }),
   ),
 });

@@ -32,7 +32,8 @@ import { THEME_ORDER, THEME_LABELS, THEME_TITLES, THEME_DEFAULT_DZTYPE, THEME_DE
 import { daysInMonth, formatMonth } from '@/lib/date';
 import { useMonths } from '@/lib/queries/months';
 import { useSaveMonthDraft } from '@/lib/queries/months';
-import { createCard, matchCards, type CardsMatchHit } from '@/lib/api/cards';
+import { createCard, matchCards, updateCard, type EditableCardFields } from '@/lib/api/cards';
+import type { LibraryCard } from '@/lib/api/types';
 import {
   buildImportPlan,
   summarizePlan,
@@ -43,10 +44,17 @@ import { parseStringsJson, type StringsJson } from '@/lib/figma/stringsJson';
 import { THEME_SHARE_PREFIX, THEME_TYPE } from '@/lib/figma/defaults';
 import type { MonthIdMap, MonthSummary } from '@/lib/manifest/types';
 import { manifestDateKey } from '@/lib/manifest/build';
+import { CardPreview } from '@/components/common/CardPreview';
 
 type Decision =
-  | { kind: 'reuse'; cardId: string; matchText: string; matchAuthor: string }
+  /** Reuse the matched library card as-is. */
+  | { kind: 'reuse'; card: LibraryCard }
+  /** Reuse the matched cardId, but PATCH the card with the imported fields
+   *  (so e.g. image URLs for the new month replace the older ones). */
+  | { kind: 'reuse-update'; card: LibraryCard }
+  /** Create a brand-new card from the imported content. */
   | { kind: 'create' }
+  /** Leave the slot empty (no extracted content or operator override). */
   | { kind: 'skip'; reason: 'no-content' | 'manual' };
 
 type DialogStep =
@@ -208,7 +216,7 @@ export function FigmaImportDialog({
       const filtered = matchInputs
         .map((e, i) => (e ? { entry: e, slotIdx: i } : null))
         .filter((x): x is { entry: { theme: string; text?: string; articleUrl?: string }; slotIdx: number } => x !== null);
-      let matchResults: Array<CardsMatchHit | null> = [];
+      let matchResults: Array<LibraryCard | null> = [];
       if (filtered.length > 0) {
         matchResults = await matchCards(filtered.map((f) => f.entry));
       }
@@ -218,12 +226,11 @@ export function FigmaImportDialog({
         const filteredIdx = filtered.findIndex((f) => f.slotIdx === i);
         const hit = filteredIdx >= 0 ? matchResults[filteredIdx] : null;
         if (hit) {
-          return {
-            kind: 'reuse',
-            cardId: hit.cardId,
-            matchText: hit.text,
-            matchAuthor: hit.author,
-          };
+          // Default to "reuse + update fields" — matched cards almost always
+          // need their image URLs refreshed for the new month, and any text
+          // edits in Figma should flow through. Editor can switch to plain
+          // "Reuse as-is" per slot if they want to preserve the old fields.
+          return { kind: 'reuse-update', card: hit };
         }
         return { kind: 'create' };
       });
@@ -242,16 +249,21 @@ export function FigmaImportDialog({
       const next = prev.slice();
       const slot = plan?.slots[slotIdx];
       if (!slot) return prev;
+      const current = prev[slotIdx];
+      const matchedCard =
+        current.kind === 'reuse' || current.kind === 'reuse-update'
+          ? current.card
+          : null;
+
       if (value === 'create') {
-        if (!slot.extracted.ok) return prev; // can't create without content
+        if (!slot.extracted.ok) return prev;
         next[slotIdx] = { kind: 'create' };
       } else if (value === 'skip') {
         next[slotIdx] = { kind: 'skip', reason: 'manual' };
-      } else if (value.startsWith('reuse:')) {
-        // Reuse with a specific cardId — keep the original match if available.
-        const prevSlot = prev[slotIdx];
-        if (prevSlot.kind === 'reuse') next[slotIdx] = prevSlot;
-        else next[slotIdx] = { kind: 'reuse', cardId: value.slice('reuse:'.length), matchText: '', matchAuthor: '' };
+      } else if (value === 'reuse') {
+        if (matchedCard) next[slotIdx] = { kind: 'reuse', card: matchedCard };
+      } else if (value === 'reuse-update') {
+        if (matchedCard) next[slotIdx] = { kind: 'reuse-update', card: matchedCard };
       }
       return next;
     });
@@ -262,26 +274,35 @@ export function FigmaImportDialog({
     setError(null);
     setStep('applying');
 
-    // 1. POST /cards for every "create" decision (concurrent, capped).
-    const createIdxs = decisions
-      .map((d, i) => (d.kind === 'create' ? i : -1))
+    // 1. Card writes — POST for "create" slots and PATCH for "reuse-update"
+    //    slots. Run in parallel with a shared concurrency cap.
+    const writeIdxs = decisions
+      .map((d, i) => (d.kind === 'create' || d.kind === 'reuse-update' ? i : -1))
       .filter((i) => i >= 0);
-    setApplyProgress({ created: 0, toCreate: createIdxs.length });
+    setApplyProgress({ created: 0, toCreate: writeIdxs.length });
     const newCardIds: Record<number, string> = {};
     try {
-      await inParallel(createIdxs, CREATE_CONCURRENCY, async (idx) => {
+      await inParallel(writeIdxs, CREATE_CONCURRENCY, async (idx) => {
         const slot = plan.slots[idx];
+        const decision = decisions[idx];
         if (!slot.extracted.ok) return undefined;
-        const body = buildCardCreateBody(slot);
-        const created = await createCard(body);
-        newCardIds[idx] = created.cardId;
+        if (decision.kind === 'create') {
+          const body = buildCardCreateBody(slot);
+          const created = await createCard(body);
+          newCardIds[idx] = created.cardId;
+        } else if (decision.kind === 'reuse-update') {
+          const patch = buildCardUpdateBody(slot);
+          if (Object.keys(patch).length > 0) {
+            await updateCard(decision.card.cardId, patch);
+          }
+        }
         setApplyProgress((prev) =>
           prev ? { ...prev, created: prev.created + 1 } : prev,
         );
         return undefined;
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Card creation failed.');
+      setError(e instanceof Error ? e.message : 'Card write failed.');
       setStep('preview');
       return;
     }
@@ -297,7 +318,8 @@ export function FigmaImportDialog({
         draftMap[dateKey] = row;
       }
       const themeIdx = THEME_ORDER.indexOf(slot.theme);
-      if (decision.kind === 'reuse') row[themeIdx] = decision.cardId;
+      if (decision.kind === 'reuse') row[themeIdx] = decision.card.cardId;
+      else if (decision.kind === 'reuse-update') row[themeIdx] = decision.card.cardId;
       else if (decision.kind === 'create') row[themeIdx] = newCardIds[i] ?? '';
       // 'skip' leaves the slot as the empty placeholder.
     });
@@ -326,14 +348,16 @@ export function FigmaImportDialog({
   const summary = plan ? summarizePlan(plan) : null;
   const decisionCounts = React.useMemo(() => {
     let reuse = 0;
+    let reuseUpdate = 0;
     let create = 0;
     let skip = 0;
     for (const d of decisions) {
       if (d.kind === 'reuse') reuse++;
+      else if (d.kind === 'reuse-update') reuseUpdate++;
       else if (d.kind === 'create') create++;
       else skip++;
     }
-    return { reuse, create, skip };
+    return { reuse, reuseUpdate, create, skip };
   }, [decisions]);
 
   return (
@@ -412,10 +436,10 @@ export function FigmaImportDialog({
           <Stack spacing={2}>
             <Alert severity="info" variant="outlined">
               <Typography variant="body2">
-                <strong>{decisionCounts.reuse}</strong> reusable existing
-                cards · <strong>{decisionCounts.create}</strong> new cards
-                to create · <strong>{decisionCounts.skip}</strong> slots
-                left empty.
+                <strong>{decisionCounts.reuse}</strong> reuse as-is ·{' '}
+                <strong>{decisionCounts.reuseUpdate}</strong> reuse + update ·{' '}
+                <strong>{decisionCounts.create}</strong> new ·{' '}
+                <strong>{decisionCounts.skip}</strong> skipped.
               </Typography>
             </Alert>
 
@@ -531,8 +555,11 @@ function SlotRow({
   onChange: (value: string) => void;
 }) {
   const day = Number(slot.date.slice(8, 10));
-  const matched = decision?.kind === 'reuse';
   const empty = decision?.kind === 'skip' && decision.reason === 'no-content';
+  const matchedCard =
+    decision?.kind === 'reuse' || decision?.kind === 'reuse-update'
+      ? decision.card
+      : null;
 
   return (
     <TableRow
@@ -540,6 +567,8 @@ function SlotRow({
         backgroundColor:
           decision?.kind === 'reuse'
             ? alpha(t.palette.success.main, 0.06)
+            : decision?.kind === 'reuse-update'
+            ? alpha(t.palette.warning.main, 0.08)
             : decision?.kind === 'create'
             ? alpha(t.palette.primary.main, 0.04)
             : empty
@@ -564,7 +593,9 @@ function SlotRow({
           size="small"
           value={
             decision?.kind === 'reuse'
-              ? `reuse:${decision.cardId}`
+              ? 'reuse'
+              : decision?.kind === 'reuse-update'
+              ? 'reuse-update'
               : decision?.kind === 'create'
               ? 'create'
               : 'skip'
@@ -572,15 +603,27 @@ function SlotRow({
           onChange={(e) => onChange(e.target.value)}
           fullWidth
         >
-          {matched && decision?.kind === 'reuse' && (
-            <MenuItem value={`reuse:${decision.cardId}`}>
+          {matchedCard && (
+            <MenuItem value="reuse">
               <Stack direction="row" alignItems="center" gap={0.75}>
                 <CheckCircleRoundedIcon
                   fontSize="small"
                   color="success"
                   sx={{ fontSize: 16 }}
                 />
-                <span>Reuse {decision.cardId.slice(0, 6)}…</span>
+                <span>Reuse as-is</span>
+              </Stack>
+            </MenuItem>
+          )}
+          {matchedCard && slot.extracted.ok && (
+            <MenuItem value="reuse-update">
+              <Stack direction="row" alignItems="center" gap={0.75}>
+                <CheckCircleRoundedIcon
+                  fontSize="small"
+                  color="warning"
+                  sx={{ fontSize: 16 }}
+                />
+                <span>Reuse + update fields</span>
               </Stack>
             </MenuItem>
           )}
@@ -630,33 +673,114 @@ function ContentCell({
   }
   const headline = slot.extracted.text || slot.extracted.articleUrl || '';
   const author = slot.extracted.author;
+  const matchedCard =
+    decision?.kind === 'reuse' || decision?.kind === 'reuse-update'
+      ? decision.card
+      : null;
+  const isUpdate = decision?.kind === 'reuse-update';
+
   return (
-    <Stack spacing={0.25}>
-      <Typography
-        variant="body2"
-        sx={{
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-          overflow: 'hidden',
-          wordBreak: 'break-all',
-        }}
-      >
-        {headline || '(no content)'}
-      </Typography>
-      {author && (
-        <Typography variant="caption" color="text.secondary">
-          — {author}
+    <Stack spacing={0.5}>
+      <Stack spacing={0.25}>
+        <Typography
+          variant="body2"
+          sx={{
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+            wordBreak: 'break-all',
+          }}
+        >
+          {headline || '(no content)'}
         </Typography>
-      )}
-      {decision?.kind === 'reuse' && decision.matchText && (
-        <Typography variant="caption" color="success.main" sx={{ wordBreak: 'break-all' }}>
-          Will reuse: {decision.matchText.slice(0, 60)}
-          {decision.matchText.length > 60 ? '…' : ''}
-        </Typography>
+        {author && (
+          <Typography variant="caption" color="text.secondary">
+            — {author}
+          </Typography>
+        )}
+      </Stack>
+
+      {matchedCard && (
+        <Stack
+          direction="row"
+          gap={1}
+          alignItems="flex-start"
+          sx={(t) => ({
+            mt: 0.5,
+            pt: 0.5,
+            borderTop: `1px dashed ${t.palette.divider}`,
+          })}
+        >
+          <CardPreview card={matchedCard} size="xs" />
+          <Stack spacing={0.25} sx={{ minWidth: 0, flex: 1 }}>
+            <Typography
+              variant="caption"
+              sx={{
+                fontWeight: 600,
+                color: isUpdate ? 'warning.dark' : 'success.dark',
+              }}
+            >
+              {isUpdate
+                ? `Updating ${matchedCard.cardId.slice(0, 6)}…`
+                : `Reusing ${matchedCard.cardId.slice(0, 6)}…`}
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                wordBreak: 'break-all',
+              }}
+            >
+              {matchedCard.text ||
+                matchedCard.articleUrl ||
+                matchedCard.themeTitle}
+            </Typography>
+            {matchedCard.author && (
+              <Typography variant="caption" color="text.secondary">
+                — {matchedCard.author}
+              </Typography>
+            )}
+          </Stack>
+        </Stack>
       )}
     </Stack>
   );
+}
+
+/**
+ * Build a PATCH body for the "reuse + update fields" flow. Only the
+ * import-pipeline fields are included; we leave `firstUsedOn`,
+ * `usageCount`, `usageHistory` etc. alone. Empties become `undefined` so
+ * JSON.stringify drops them (DynamoDB rejects empty strings on GSI keys).
+ */
+function buildCardUpdateBody(slot: ImportSlot): EditableCardFields {
+  if (!slot.extracted.ok) return {};
+  const theme = slot.theme as ThemeName;
+  const blank = (s: string | undefined | null) =>
+    s && s.length > 0 ? s : undefined;
+  const body: EditableCardFields = {};
+  const set = <K extends keyof EditableCardFields>(
+    k: K,
+    v: EditableCardFields[K] | undefined,
+  ) => {
+    if (v !== undefined) body[k] = v;
+  };
+  set('themeTitle', blank(THEME_TITLES[theme]));
+  set('type', blank(THEME_TYPE[theme]));
+  set('dzType', blank(THEME_DEFAULT_DZTYPE[theme]));
+  set('text', blank(slot.extracted.text));
+  set('author', blank(slot.extracted.author));
+  set('articleUrl', blank(slot.extracted.articleUrl));
+  set('latestBgImageUrl', blank(slot.bgImageUrl));
+  set('latestDzImageUrl', blank(slot.dzImageUrl));
+  set('primaryCTAText', blank(THEME_DEFAULT_PRIMARY_CTA[theme]));
+  set('sharePrefix', blank(THEME_SHARE_PREFIX[theme]));
+  return body;
 }
 
 function buildCardCreateBody(slot: ImportSlot) {

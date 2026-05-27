@@ -111,22 +111,16 @@ export type CardsMatchEntry = {
   text?: string;
   articleUrl?: string;
 };
-export type CardsMatchHit = {
-  cardId: string;
-  text: string;
-  author: string;
-  articleUrl: string;
-};
 export async function matchCards(
   entries: CardsMatchEntry[],
-): Promise<Array<CardsMatchHit | null>> {
+): Promise<Array<LibraryCard | null>> {
   if (entries.length === 0) return [];
   const raw = await apiRequest<unknown>('/cards/match', {
     method: 'POST',
     body: { entries },
   });
   const parsed = CardsMatchResponseSchema.parse(raw);
-  const out: Array<CardsMatchHit | null> = new Array(entries.length).fill(null);
+  const out: Array<LibraryCard | null> = new Array(entries.length).fill(null);
   for (const r of parsed.results) {
     if (r.match) out[r.index] = r.match;
   }
