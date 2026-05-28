@@ -79,6 +79,9 @@ export function usePublishMonth(year: number, month: number) {
     onSuccess: (row: MonthRow) => {
       qc.setQueryData(queryKeys.month(year, month), row);
       qc.invalidateQueries({ queryKey: queryKeys.months });
+      // Publish rolls referenced cards' usage history forward server-side,
+      // so the library page needs fresh data to show the new LRU / counts.
+      qc.invalidateQueries({ queryKey: ['cards'] });
     },
   });
 }
