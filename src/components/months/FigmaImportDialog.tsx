@@ -27,6 +27,9 @@ import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
 import BlockRoundedIcon from '@mui/icons-material/BlockRounded';
+import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
+import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
+import HourglassEmptyRoundedIcon from '@mui/icons-material/HourglassEmptyRounded';
 
 import { THEME_ORDER, THEME_LABELS, THEME_TITLES, THEME_DEFAULT_DZTYPE, THEME_DEFAULT_PRIMARY_CTA, type ThemeName } from '@/lib/constants';
 import { daysInMonth, formatMonth } from '@/lib/date';
@@ -42,6 +45,11 @@ import {
 } from '@/lib/figma/importPlan';
 import { parseStringsJson, type StringsJson } from '@/lib/figma/stringsJson';
 import { THEME_SHARE_PREFIX, THEME_TYPE } from '@/lib/figma/defaults';
+import {
+  uploadTargetsFromPlan,
+  type UploadTarget,
+} from '@/lib/figma/uploadTargets';
+import { presignImageUploads } from '@/lib/api/images';
 import type { MonthIdMap, MonthSummary } from '@/lib/manifest/types';
 import { manifestDateKey } from '@/lib/manifest/build';
 import { CardPreview } from '@/components/common/CardPreview';
@@ -62,9 +70,23 @@ type DialogStep =
   | 'previewing' // running match query
   | 'preview'
   | 'applying'
+  | 'upload' // dragging + uploading PNGs
   | 'done';
 
 const CREATE_CONCURRENCY = 8;
+const UPLOAD_CONCURRENCY = 4;
+
+type UploadRowStatus =
+  | { kind: 'awaiting' }
+  | { kind: 'ready'; file: File }
+  | { kind: 'uploading'; file: File }
+  | { kind: 'done'; file: File }
+  | { kind: 'failed'; file: File; error: string };
+
+type UploadRow = {
+  target: UploadTarget;
+  status: UploadRowStatus;
+};
 
 /** Walk from the latest known indexed month up to `target`, summing daysInMonth. */
 function suggestStartIndex(
@@ -145,6 +167,8 @@ export function FigmaImportDialog({
     created: number;
     toCreate: number;
   } | null>(null);
+  const [uploadRows, setUploadRows] = React.useState<UploadRow[]>([]);
+  const [extras, setExtras] = React.useState<string[]>([]);
 
   // Seed start index from the suggestion once it's available (don't clobber edits).
   React.useEffect(() => {
@@ -171,6 +195,8 @@ export function FigmaImportDialog({
     setPlan(null);
     setDecisions([]);
     setApplyProgress(null);
+    setUploadRows([]);
+    setExtras([]);
     saveDraftMutResetRef.current();
   }, [open]);
 
@@ -343,14 +369,141 @@ export function FigmaImportDialog({
         ifMatch: null, // overwrite any pending changes — the import is the source
         dzImageUrlStartIndex: plan.dzImageUrlStartIndex,
       });
-      setStep('done');
-      // Auto-close after a beat so the editor sees the populated grid.
-      window.setTimeout(() => onClose(), 600);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save the imported draft.');
       setStep('preview');
+      return;
     }
+
+    // 4. Advance to the upload step with the upload targets seeded.
+    const targets = uploadTargetsFromPlan(plan, decisions);
+    if (targets.length === 0) {
+      // No new images needed (everything reused as-is). Skip step 4.
+      setStep('done');
+      window.setTimeout(() => onClose(), 600);
+      return;
+    }
+    setUploadRows(targets.map((t) => ({ target: t, status: { kind: 'awaiting' } })));
+    setExtras([]);
+    setStep('upload');
   }
+
+  /** Pair dropped/picked PNGs to upload rows by exact filename match (case-insensitive). */
+  function ingestFiles(files: FileList | File[]) {
+    setError(null);
+    const list = Array.from(files);
+    setUploadRows((prev) => {
+      const next = prev.map((r) => ({ ...r }));
+      const byName = new Map<string, number>();
+      next.forEach((r, i) => byName.set(r.target.filename.toLowerCase(), i));
+      const localExtras: string[] = [];
+      for (const f of list) {
+        const idx = byName.get(f.name.toLowerCase());
+        if (idx == null) {
+          localExtras.push(f.name);
+          continue;
+        }
+        // Only overwrite if not already uploaded successfully.
+        const cur = next[idx].status;
+        if (cur.kind === 'done' || cur.kind === 'uploading') continue;
+        next[idx] = { ...next[idx], status: { kind: 'ready', file: f } };
+      }
+      if (localExtras.length > 0) {
+        setExtras((e) => [...e, ...localExtras]);
+      }
+      return next;
+    });
+  }
+
+  async function onUploadAll() {
+    setError(null);
+    const readyIdxs = uploadRows
+      .map((r, i) => (r.status.kind === 'ready' ? i : -1))
+      .filter((i) => i >= 0);
+    if (readyIdxs.length === 0) return;
+
+    // Flip rows to uploading + request presigned URLs in one call.
+    setUploadRows((prev) => {
+      const next = prev.slice();
+      for (const i of readyIdxs) {
+        const cur = next[i].status;
+        if (cur.kind === 'ready') {
+          next[i] = { ...next[i], status: { kind: 'uploading', file: cur.file } };
+        }
+      }
+      return next;
+    });
+
+    const keys = readyIdxs.map((i) => uploadRows[i].target.s3Key);
+    let presigned: Awaited<ReturnType<typeof presignImageUploads>>;
+    try {
+      presigned = await presignImageUploads(keys);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to obtain presigned URLs.');
+      // Revert uploading → ready
+      setUploadRows((prev) => {
+        const next = prev.slice();
+        for (const i of readyIdxs) {
+          const cur = next[i].status;
+          if (cur.kind === 'uploading') {
+            next[i] = { ...next[i], status: { kind: 'ready', file: cur.file } };
+          }
+        }
+        return next;
+      });
+      return;
+    }
+
+    const byKey = new Map(presigned.map((p) => [p.key, p.url]));
+    await inParallel(readyIdxs, UPLOAD_CONCURRENCY, async (rowIdx) => {
+      const row = uploadRows[rowIdx];
+      const url = byKey.get(row.target.s3Key);
+      const cur = row.status;
+      if (!url || cur.kind !== 'uploading') return undefined;
+      try {
+        const res = await fetch(url, {
+          method: 'PUT',
+          body: cur.file,
+          headers: { 'Content-Type': 'image/png' },
+        });
+        if (!res.ok) {
+          throw new Error(`S3 returned ${res.status}`);
+        }
+        setUploadRows((prev) => {
+          const next = prev.slice();
+          next[rowIdx] = { ...next[rowIdx], status: { kind: 'done', file: cur.file } };
+          return next;
+        });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Upload failed';
+        setUploadRows((prev) => {
+          const next = prev.slice();
+          next[rowIdx] = {
+            ...next[rowIdx],
+            status: { kind: 'failed', file: cur.file, error: message },
+          };
+          return next;
+        });
+      }
+      return undefined;
+    });
+  }
+
+  const uploadCounts = React.useMemo(() => {
+    let awaiting = 0;
+    let ready = 0;
+    let uploading = 0;
+    let done = 0;
+    let failed = 0;
+    for (const r of uploadRows) {
+      if (r.status.kind === 'awaiting') awaiting++;
+      else if (r.status.kind === 'ready') ready++;
+      else if (r.status.kind === 'uploading') uploading++;
+      else if (r.status.kind === 'done') done++;
+      else if (r.status.kind === 'failed') failed++;
+    }
+    return { awaiting, ready, uploading, done, failed, total: uploadRows.length };
+  }, [uploadRows]);
 
   const summary = plan ? summarizePlan(plan) : null;
   const decisionCounts = React.useMemo(() => {
@@ -516,6 +669,72 @@ export function FigmaImportDialog({
           </Stack>
         )}
 
+        {step === 'upload' && (
+          <Stack spacing={2}>
+            <Typography variant="body2" color="text.secondary">
+              Drop the full set of PNG screenshots exported from Figma for this
+              month. The Studio matches each file by name against the
+              {' '}<strong>{uploadCounts.total}</strong> new/updated cards above
+              and uploads only those. Files that don&apos;t match are ignored.
+            </Typography>
+
+            <FileDropZone onFiles={ingestFiles} />
+
+            <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
+              <Typography variant="caption" color="text.secondary">
+                <strong>{uploadCounts.done}</strong> uploaded ·{' '}
+                <strong>{uploadCounts.uploading}</strong> in flight ·{' '}
+                <strong>{uploadCounts.ready}</strong> ready ·{' '}
+                <strong>{uploadCounts.awaiting}</strong> awaiting file
+                {uploadCounts.failed > 0 && (
+                  <>
+                    {' '}·{' '}
+                    <strong style={{ color: 'crimson' }}>
+                      {uploadCounts.failed} failed
+                    </strong>
+                  </>
+                )}
+              </Typography>
+              {extras.length > 0 && (
+                <Typography variant="caption" color="text.secondary">
+                  · <em>{extras.length}</em> extra file
+                  {extras.length === 1 ? '' : 's'} ignored
+                </Typography>
+              )}
+            </Stack>
+
+            <TableContainer
+              sx={(t) => ({
+                border: `1px solid ${t.palette.divider}`,
+                borderRadius: 2,
+                maxHeight: '50vh',
+              })}
+            >
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ width: 90 }}>Date</TableCell>
+                    <TableCell sx={{ width: 140 }}>Theme</TableCell>
+                    <TableCell sx={{ width: 200 }}>Filename</TableCell>
+                    <TableCell>Status</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {uploadRows.map((row) => (
+                    <UploadStatusRow key={row.target.s3Key} row={row} />
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+
+            {error && (
+              <Alert severity="error" variant="outlined">
+                {error}
+              </Alert>
+            )}
+          </Stack>
+        )}
+
         {step === 'done' && (
           <Stack alignItems="center" sx={{ py: 4 }}>
             <CheckCircleRoundedIcon
@@ -546,6 +765,20 @@ export function FigmaImportDialog({
               Apply import
             </Button>
           </>
+        )}
+        {step === 'upload' && (
+          <Button
+            onClick={onUploadAll}
+            variant="contained"
+            disabled={uploadCounts.ready === 0 || uploadCounts.uploading > 0}
+            startIcon={<CloudUploadRoundedIcon />}
+          >
+            {uploadCounts.failed > 0 && uploadCounts.ready > 0
+              ? `Retry / upload ${uploadCounts.ready}`
+              : `Upload ${uploadCounts.ready || ''} file${
+                  uploadCounts.ready === 1 ? '' : 's'
+                }`}
+          </Button>
         )}
       </DialogActions>
     </Dialog>
@@ -788,6 +1021,109 @@ function buildCardUpdateBody(slot: ImportSlot): EditableCardFields {
   set('primaryCTAText', blank(THEME_DEFAULT_PRIMARY_CTA[theme]));
   set('sharePrefix', blank(THEME_SHARE_PREFIX[theme]));
   return body;
+}
+
+function FileDropZone({ onFiles }: { onFiles: (files: FileList | File[]) => void }) {
+  const [hot, setHot] = React.useState(false);
+  return (
+    <Box
+      onDragOver={(e) => {
+        e.preventDefault();
+        setHot(true);
+      }}
+      onDragLeave={() => setHot(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setHot(false);
+        if (e.dataTransfer.files?.length) onFiles(e.dataTransfer.files);
+      }}
+      sx={(t) => ({
+        border: `2px dashed ${
+          hot ? t.palette.primary.main : t.palette.divider
+        }`,
+        backgroundColor: hot ? alpha(t.palette.primary.main, 0.06) : 'transparent',
+        borderRadius: 2,
+        p: 3,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 1,
+      })}
+    >
+      <CloudUploadRoundedIcon sx={{ fontSize: 36, color: 'text.secondary' }} />
+      <Typography variant="body2" color="text.secondary">
+        Drop PNGs here, or
+      </Typography>
+      <Button component="label" size="small" variant="outlined">
+        Choose files
+        <input
+          hidden
+          type="file"
+          accept="image/png,.png"
+          multiple
+          onChange={(e) => {
+            if (e.target.files?.length) onFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
+      </Button>
+      <Typography variant="caption" color="text.secondary">
+        Files are matched by name (e.g. <code>quote_1813.png</code>). Extras are ignored.
+      </Typography>
+    </Box>
+  );
+}
+
+function UploadStatusRow({ row }: { row: UploadRow }) {
+  const day = Number(row.target.date.slice(8, 10));
+  const status = row.status;
+  let icon: React.ReactNode = null;
+  let label = '';
+  let color: 'text.secondary' | 'primary.main' | 'success.dark' | 'warning.dark' | 'error.dark' =
+    'text.secondary';
+  if (status.kind === 'awaiting') {
+    icon = <HourglassEmptyRoundedIcon sx={{ fontSize: 16 }} />;
+    label = 'Awaiting file';
+  } else if (status.kind === 'ready') {
+    icon = <CheckCircleRoundedIcon sx={{ fontSize: 16 }} color="primary" />;
+    label = `Ready · ${(status.file.size / 1024).toFixed(0)} KB`;
+    color = 'primary.main';
+  } else if (status.kind === 'uploading') {
+    icon = <CircularProgress size={14} />;
+    label = 'Uploading…';
+    color = 'primary.main';
+  } else if (status.kind === 'done') {
+    icon = <CheckCircleRoundedIcon sx={{ fontSize: 16 }} color="success" />;
+    label = 'Uploaded';
+    color = 'success.dark';
+  } else if (status.kind === 'failed') {
+    icon = <ErrorOutlineRoundedIcon sx={{ fontSize: 16 }} color="error" />;
+    label = `Failed: ${status.error}`;
+    color = 'error.dark';
+  }
+  return (
+    <TableRow>
+      <TableCell>{day}</TableCell>
+      <TableCell>
+        <Typography variant="body2" noWrap>
+          {THEME_LABELS[row.target.theme] ?? row.target.theme}
+        </Typography>
+      </TableCell>
+      <TableCell>
+        <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+          {row.target.filename}
+        </Typography>
+      </TableCell>
+      <TableCell>
+        <Stack direction="row" gap={0.75} alignItems="center">
+          {icon}
+          <Typography variant="caption" sx={{ color }}>
+            {label}
+          </Typography>
+        </Stack>
+      </TableCell>
+    </TableRow>
+  );
 }
 
 function buildCardCreateBody(slot: ImportSlot) {

@@ -54,6 +54,17 @@ export const CardsLookupResponseSchema = z.object({
   missing: z.array(z.string()),
 });
 
+/** POST /images/presign response. URLs preserve request order. */
+export const PresignImageUploadsResponseSchema = z.object({
+  urls: z.array(
+    z.object({
+      key: z.string(),
+      url: z.string(),
+      expiresIn: z.number(),
+    }),
+  ),
+});
+
 /** POST /cards/match response — results preserve request order. */
 export const CardsMatchResponseSchema = z.object({
   results: z.array(
