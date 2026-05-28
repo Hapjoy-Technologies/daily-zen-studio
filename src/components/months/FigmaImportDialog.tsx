@@ -154,6 +154,13 @@ export function FigmaImportDialog({
   }, [open, suggested, startIndexInput]);
 
   // Reset transient state when the dialog closes.
+  //
+  // `saveDraftMut` intentionally NOT in deps — its reference is recreated
+  // on every render by TanStack Query, and combined with setters like
+  // setDecisions([]) (new array each call) that would otherwise trigger
+  // a re-render → new mutation ref → re-run effect → infinite loop.
+  const saveDraftMutResetRef = React.useRef(saveDraftMut.reset);
+  saveDraftMutResetRef.current = saveDraftMut.reset;
   React.useEffect(() => {
     if (open) return;
     setStep('input');
@@ -164,8 +171,8 @@ export function FigmaImportDialog({
     setPlan(null);
     setDecisions([]);
     setApplyProgress(null);
-    saveDraftMut.reset();
-  }, [open, saveDraftMut]);
+    saveDraftMutResetRef.current();
+  }, [open]);
 
   async function handleFile(file: File) {
     setError(null);

@@ -64,12 +64,20 @@ export function AddToMonthDialog({
   const saveMut = useSaveMonthDraft(year, month);
 
   // Reset when the dialog is closed.
+  //
+  // `saveMut` intentionally NOT in deps — TanStack Query recreates the
+  // mutation object reference on every render. Calling `saveMut.reset()`
+  // notifies its subscribers (this very component), which produces a new
+  // mutation ref, which would re-run the effect → infinite loop. Pin
+  // the reset callback via a ref so the effect can fire only on `open`
+  // transitions.
+  const saveMutResetRef = React.useRef(saveMut.reset);
+  saveMutResetRef.current = saveMut.reset;
   React.useEffect(() => {
-    if (!open) {
-      setConfirmReplace(null);
-      saveMut.reset();
-    }
-  }, [open, saveMut]);
+    if (open) return;
+    setConfirmReplace(null);
+    saveMutResetRef.current();
+  }, [open]);
 
   if (!card) return null;
   const safeCard = card; // narrow for closures below
