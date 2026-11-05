@@ -29,7 +29,8 @@ export const THEME_TITLES: Record<string, string> = {
   'Think this instead of that': 'Think Better',
   'Blog post': 'Practicing Gratitude',
   'Gratitude stories': 'Gratitude stories',
-  Affn: 'Affirmation',
+  // Must match DailyZen Defaults.kt / every published manifest.
+  Affn: 'Affirmation for you',
 };
 
 export const THEME_DEFAULT_DZTYPE: Record<string, string> = {
@@ -38,7 +39,7 @@ export const THEME_DEFAULT_DZTYPE: Record<string, string> = {
   'Think this instead of that': 'share',
   'Blog post': 'read',
   'Gratitude stories': 'read',
-  Affn: 'read',
+  Affn: 'add_affn',
 };
 
 export const THEME_DEFAULT_PRIMARY_CTA: Record<string, string> = {
@@ -47,7 +48,7 @@ export const THEME_DEFAULT_PRIMARY_CTA: Record<string, string> = {
   'Think this instead of that': 'Share With Friends',
   'Blog post': 'Read Full Post',
   'Gratitude stories': 'Read Full Post',
-  Affn: 'Repeat 3 Times',
+  Affn: 'Add Affirmation',
 };
 
 export const SESSION_PASSWORD_KEY = 'dz_editor_password';
