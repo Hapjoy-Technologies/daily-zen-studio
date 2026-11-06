@@ -24,6 +24,7 @@ import PublishRoundedIcon from '@mui/icons-material/PublishRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded';
 import CloudDownloadRoundedIcon from '@mui/icons-material/CloudDownloadRounded';
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 
 import type { LibraryCard } from '@/lib/api/types';
 import type { MonthDraft, MonthIdMap } from '@/lib/manifest/types';
@@ -49,6 +50,7 @@ import { CardDrawer } from '@/components/library/CardDrawer';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { CardPreview } from '@/components/common/CardPreview';
 import { FigmaImportDialog } from './FigmaImportDialog';
+import { CurateDialog } from '@/components/curation/CurateDialog';
 import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 
@@ -136,6 +138,8 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
   const [publishOpen, setPublishOpen] = React.useState(false);
   const [conflictOpen, setConflictOpen] = React.useState(false);
   const [importOpen, setImportOpen] = React.useState(false);
+  const [curateOpen, setCurateOpen] = React.useState(false);
+  const [appliedNote, setAppliedNote] = React.useState(false);
 
   const monthKey = row?.monthKey;
   const ready =
@@ -225,6 +229,13 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
         updatedAt: new Date().toISOString(),
       };
     });
+  }
+
+  /** Load an AI proposal into the local draft; saving stays the editor's call. */
+  function applyProposal(ids: MonthIdMap, proposalCards: ReadonlyMap<string, LibraryCard>) {
+    setLocalDraft(hydrateDraft(year, month, ids, proposalCards));
+    setCurateOpen(false);
+    setAppliedNote(true);
   }
 
   // Derived state.
@@ -370,6 +381,18 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
         </Stack>
 
         <Stack direction="row" gap={1} flexWrap="wrap">
+          <Tooltip title="Build the month from reusable library cards: plan, pick and review with AI.">
+            <span>
+              <Button
+                onClick={() => setCurateOpen(true)}
+                startIcon={<AutoAwesomeRoundedIcon />}
+                disabled={!ready || saveMut.isPending || publishMut.isPending || discardMut.isPending}
+                variant={ready && filledSlotCount === 0 ? 'contained' : 'text'}
+              >
+                Curate with AI…
+              </Button>
+            </span>
+          </Tooltip>
           <Tooltip title="Replace the month draft from a Figma strings.json export.">
             <span>
               <Button
@@ -466,6 +489,12 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
             {lookupQ.data.missing.length} referenced card(s) are missing from the library
           </AlertTitle>
           Fix the affected slots before publishing.
+        </Alert>
+      )}
+
+      {appliedNote && (
+        <Alert severity="info" variant="outlined" onClose={() => setAppliedNote(false)}>
+          The AI proposal is in the editor. Check it, then click Save draft — nothing is saved until you do.
         </Alert>
       )}
 
@@ -646,6 +675,18 @@ export function MonthEditor({ year, month }: { year: number; month: number }) {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {curateOpen && (
+        <CurateDialog
+          open={curateOpen}
+          year={year}
+          month={month}
+          currentIdMap={localIdMap}
+          editorDirty={dirty}
+          onApply={applyProposal}
+          onClose={() => setCurateOpen(false)}
+        />
+      )}
 
       <FigmaImportDialog
         open={importOpen}
